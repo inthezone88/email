@@ -4,7 +4,7 @@ Ties booked calls and sales in GoHighLevel back to the specific email that drove
 
 The desktop dashboard has five reports: Campaigns, Sequences, Segments, List health and Contact journeys. Below 700px it switches to a phone layout (Overview, Emails, More, Settings) that can be installed as a PWA.
 
-Stack: Next.js 16 (App Router) + TypeScript, Postgres via Drizzle, deployed on Vercel with Vercel Cron.
+Stack: Next.js 16 (App Router) + TypeScript, Postgres via Drizzle, deployed on Railway as a single Node service.
 
 ## Quick start (local)
 
@@ -23,25 +23,35 @@ npm test        # unit tests: attribution engine, metric formulas, alerts, signa
 npm run lint    # tsc --noEmit
 ```
 
-## Deploy (Vercel + Supabase/Neon)
+## Deploy (Railway)
 
-1. Create a Postgres database and copy its **pooled** connection string.
-2. Import this repo in Vercel and set every variable from `.env.example`:
+1. In a Railway project, add a **PostgreSQL** service. Then add a service from this GitHub repo.
+2. On the app service, set the variables from `.env.example`:
+   - `DATABASE_URL` = `${{Postgres.DATABASE_URL}}`
    - Generate `SESSION_SECRET` with `openssl rand -base64 48`.
    - Generate `TOKEN_ENCRYPTION_KEY` with `openssl rand -base64 32`.
    - Choose your own values for `WEBHOOK_SECRET` and `CRON_SECRET`.
-3. Run `DATABASE_URL=... npm run db:migrate` once, from your machine or a CI step.
-4. `vercel.json` registers two crons:
-   - Nightly reconcile at 07:17 UTC.
+   - Put your address in `ADMIN_EMAILS`.
+   - Set `APP_URL` and `GHL_REDIRECT_URI` to the service's public domain (Settings → Networking → Generate domain).
+3. `railway.json` handles the rest:
+   - It builds with `npm run build`.
+   - Before each deploy it applies migrations (`npm run db:migrate:deploy`).
+   - It starts with `npm start`, which listens on `$PORT`.
+   - It health-checks `/api/healthz`.
+4. Background jobs run inside the app (`src/instrumentation.ts` → `src/server/scheduler.ts`), so no cron service is needed:
    - Token refresh every 6 hours.
+   - GHL reconcile, re-attribution and alerts at 07:17 UTC.
 
-   Vercel sends `Authorization: Bearer $CRON_SECRET` automatically.
+   Keep the service at **one replica**. If you add replicas or PR previews, set `DISABLE_CRON=true` on the extras.
+5. Optional: load the demo data into the Railway database with `railway run npm run db:seed`.
+
+To trigger the jobs by hand: `curl -H "Authorization: Bearer $CRON_SECRET" $APP_URL/api/cron/nightly` (or `/api/cron/tokens`).
 
 ## Connecting GoHighLevel
 
 1. **Create a Marketplace app** (private or unlisted) at <https://marketplace.gohighlevel.com>.
    - Set distribution to *Sub-account*.
-   - Set the redirect URL to `https://<your-app>/api/ghl/callback`, which is also `GHL_REDIRECT_URI`.
+   - Set the redirect URL to `https://<your-app>.up.railway.app/api/ghl/callback`, which is also `GHL_REDIRECT_URI`.
    - Add the read-only scopes listed in `src/server/ghl/client.ts` (`GHL_SCOPES`).
    - Copy the client id and secret into `GHL_CLIENT_ID` and `GHL_CLIENT_SECRET`.
 2. **Webhooks.**

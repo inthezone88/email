@@ -9,8 +9,8 @@ function getDb(): DB {
   if (!g.__db) {
     const url = process.env.DATABASE_URL;
     if (!url) throw new Error("DATABASE_URL is not set");
-    // prepare:false keeps us compatible with transaction-mode poolers (Supabase/Neon on Vercel).
-    g.__pg = postgres(url, { prepare: false, max: process.env.VERCEL ? 1 : 10 });
+    // prepare:false keeps us compatible with transaction-mode poolers (e.g. PgBouncer) if one is added later.
+    g.__pg = postgres(url, { prepare: false, max: 10 });
     g.__db = drizzle(g.__pg, { schema });
   }
   return g.__db;
